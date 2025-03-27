@@ -339,14 +339,6 @@
     % parse environment options
     \setkeys{karnaugh-map}{#1}%
     %
-    % check if the user wants us to omit begin/end{tikzpicture}
-    \if@karnaughmap@option@omittikzpicture
-      \begin{scope}
-    \else
-      % wrap in tikzpicture for the user
-      \begin{tikzpicture}
-    \fi
-    %
     % check if implicant colors are specified
     \IfStrEq{\@karnaughmap@option@implicantcolors}{}{}{%
       % ensure no empty colors are specified
@@ -380,15 +372,13 @@
     % to parse remaining arguments and finish initialization.
     \@karnaughmap@func@karnaughstart@%
 }{
-    % end tikzpicture if the user did not want us to omit it
-    \if@karnaughmap@option@omittikzpicture
-      \end{scope}
-    \else
+    \end{scope}
+    % end tikzpicture environment if the user did not want us to omit it
+    \if@karnaughmap@option@omittikzpicture\else
       \end{tikzpicture}
     \fi
   \endgroup
 }
-
 \DeclareDocumentCommand{\@karnaughmap@func@karnaughstart@}{oooooo} {%
   % parse label args {[START]
     % try to maintain backwards compatibility with v1 while enabling users to separatly
@@ -584,14 +574,19 @@
       Existing templates have the following dimensions: 2x2x1, 2x4x1, 4x2x1, 4x4x1, 4x4x2, and 4x4x4.
     }%
   \fi
-  \tikzset{
+  % begin tikzpicture environment if the user did not want us to omit it
+  \if@karnaughmap@option@omittikzpicture\else
+    \begin{tikzpicture}
+  \fi
+  %
+  \begin{scope}[
     LineStyleA/.style={semithick,solid},
     LineStyleB/.style={semithick,dash dot dot},
     LineStyleC/.style={thin,double distance=0.8pt},
     LineStyleD/.style={ultra thick},
     LineStyleE/.style={semithick,dashed},
     LineStyleF/.style={semithick,densely dotted},
-  }
+  ]
     % grid {[START]
       % for all dimensions
       \draw[color=black, ultra thin] (0,0) grid (\@karnaughmap@var@mapsizex@,\@karnaughmap@var@mapsizey@);
@@ -1482,16 +1477,13 @@
 %   \end{karnaugh-map}
 % \end{figure}
 %
-% \texttt{omittikzpicture}: By default, the |karnaugh-map| environment creates its own |tikzpicture| environment. This option disables this behavior, and it would be expected that the user wraps the |karnaugh-map| environment in a |tikzpicture| environment. This option makes it possible to use the |tikzexternal| package with |karnaugh-map|, or to integrate |karnaugh-map| into a larger |tikzpicture|.
-%
-% \begin{verbatim}
-%   \begin{tikzpicture}
-%     \begin{karnaugh-map}(omittikzpicture)
-%       \minterms{0,1,2,3}
-%     \end{karnaugh-map}
-%     % Additional tikz code in the same picture
-%   \end{tikzpicture}}
-% \end{verbatim}
+% \texttt{omittikzpicture}: By default, the |karnaugh-map| environment creates its own |tikzpicture| environment. This option disables this behavior, and it would be expected that the user wraps the |karnaugh-map| environment in a |tikzpicture| environment. This option makes it possible to use the |tikzexternal| package with |karnaugh-map|, or to integrate |karnaugh-map| into a larger |tikzpicture|. A code example follows;
+%\begin{verbatim}
+%\begin{tikzpicture}
+%  \begin{karnaugh-map}(omittikzpicture)
+%  \end{karnaugh-map}
+%\end{tikzpicture}}
+%\end{verbatim}
 %
 % \newpage
 % \section{Examples}
