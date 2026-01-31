@@ -1,0 +1,19 @@
+
+ \begin{theglossary} 
+
+    \makeatletter\scan@allowedfalse
+
+  \item v1.0\efill 
+ \subitem General:\ Initial version\pfill \hdpindex{}{1}
+  \item v1.1\efill 
+ \subitem \verb*+\terms+:\ Support user specified term content and variable entered maps\pfill 
+		\hdpindex{}{4}
+  \item v2.0\efill 
+ \subitem General:\ Support alternate input label position\pfill \hdpindex{}{9}
+      \subsubitem Support custom implicant colors\pfill \hdpindex{}{9}
+    \subitem \verb*+karnaugh-map+:\ API change: variable labels are now specified separately.\pfill 
+		\hdpindex{}{2}
+  \item v2.1\efill 
+ \subitem General:\ braces and mintermnames.\pfill \hdpindex{}{1}
+
+ \end{theglossary}

@@ -1,0 +1,14 @@
+This is makeindex, version 2.17 [TeX Live 2025] (kpathsea + Thai support).
+Scanning style file /usr/local/texlive/2023/texmf-dist/makeindex/latex/gglo.ist........
+** Input style error (file = /usr/local/texlive/2023/texmf-dist/makeindex/latex/gglo.ist, line = 72):
+   -- Unknown specifier lethead_prefix.
+** Input style error (file = /usr/local/texlive/2023/texmf-dist/makeindex/latex/gglo.ist, line = 73):
+   -- Unknown specifier lethead_suffix.
+** Input style error (file = /usr/local/texlive/2023/texmf-dist/makeindex/latex/gglo.ist, line = 74):
+   -- Unknown specifier lethead_flag.
+......done (14 attributes redefined, 3 ignored).
+Scanning input file karnaugh-map.glo....done (6 entries accepted, 0 rejected).
+Sorting entries....done (19 comparisons).
+Generating output file karnaugh-map.gls....done (19 lines written, 0 warnings).
+Output written in karnaugh-map.gls.
+Transcript written in karnaugh-map.ilg.

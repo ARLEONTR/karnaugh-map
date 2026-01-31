@@ -1,0 +1,44 @@
+
+ \begin{theindex} 
+ \makeatletter\scan@allowedfalse
+{\bfseries\hfil A\hfil}\nopagebreak
+
+  \item \verb*+\autoterms+\pfill \hdclindex{2}{main}{1}
+
+  \indexspace
+{\bfseries\hfil D\hfil}\nopagebreak
+
+  \item \verb*+\donotcareterms+\pfill \hdclindex{7}{main}{1}
+
+  \indexspace
+{\bfseries\hfil E\hfil}\nopagebreak
+
+  \item environments:\efill 
+ \subitem {\ttfamily karnaugh-map}\pfill \hdclindex{1}{main}{1}
+
+  \indexspace
+{\bfseries\hfil I\hfil}\nopagebreak
+
+  \item \verb*+\implicant+\pfill \hdclindex{9}{main}{1}
+  \item \verb*+\implicantcorner+\pfill \hdclindex{11}{main}{1}
+  \item \verb*+\implicantedge+\pfill \hdclindex{10}{main}{1}
+  \item \verb*+\indeterminants+\pfill \hdclindex{3}{main}{1}
+
+  \indexspace
+{\bfseries\hfil K\hfil}\nopagebreak
+
+  \item {\ttfamily karnaugh-map} (env.)\pfill \hdclindex{1}{main}{1}
+
+  \indexspace
+{\bfseries\hfil M\hfil}\nopagebreak
+
+  \item \verb*+\manualterms+\pfill \hdclindex{4}{main}{1}
+  \item \verb*+\maxterms+\pfill \hdclindex{5}{main}{1}
+  \item \verb*+\minterms+\pfill \hdclindex{6}{main}{1}
+
+  \indexspace
+{\bfseries\hfil T\hfil}\nopagebreak
+
+  \item \verb*+\terms+\pfill \hdclindex{8}{main}{1}
+
+ \end{theindex}
