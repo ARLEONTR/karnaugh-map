@@ -16,7 +16,6 @@
 %
 %<*driver>
   \documentclass{ltxdoc}
-  \usepackage{karnaugh-map}
   \usepackage{multicol}% for documentation
   \usepackage{tabularx}% for documentation
   \usepackage{float}% for documentation
@@ -101,36 +100,47 @@
 
 %% drawing
 \RequirePackage{tikz}
-\usetikzlibrary{calc,matrix}
+\usetikzlibrary{calc,matrix,positioning,intersections,backgrounds,decorations.pathreplacing}
 
-%%
-%% Helpers
-%%
-
-%% update color
-\newcommand{\@karnaughmap@func@updatecolor@}{%
-  % jump to next color
-  \advance\@karnaughmap@var@colorindex@ by 1\relax
-  \advance\@karnaughmap@var@colorindexnext@ by 1\relax
-  % store color
-  \StrBetween[\@karnaughmap@var@colorindex@,\@karnaughmap@var@colorindexnext@]{\@karnaughmap@var@colors@}{,}{,}[\@karnaughmap@var@color@]
-  % if color is empty (eg. when there are more implicants than colors) return cyan
-  \IfStrEq{\@karnaughmap@var@color@}{}{%
-    \renewcommand{\@karnaughmap@var@color@}{cyan}
-  }{}
-}
-
-%% convert decimal to line style
+%% convert decimal to line style name
 \newcommand{\@karnaughmap@func@decimaltolinestyle@}[1]{%
   \if@karnaughmap@option@linestyles
-    \ifnum#1=1 LineStyleA\fi
+    \ifnum#1=0 LineStyleA\fi
+    \ifnum#1=1 LineStyleB\fi
     \ifnum#1=2 LineStyleB\fi
     \ifnum#1=3 LineStyleC\fi
+    \ifnum#1=4 LineStyleC\fi
     \ifnum#1=5 LineStyleD\fi
     \ifnum#1=6 LineStyleE\fi
     \ifnum#1>6 LineStyleF\fi
   \else
     solid%
+  \fi
+}
+
+%% draw braces for variables
+\newcommand{\@karnaughmap@func@drawbraces@}[2]{% #1=offsetx, #2=offsety
+  % Columns
+  \ifnum\@karnaughmap@var@mapsizex@=2
+    \draw[decoration={brace,amplitude=3pt},decorate,thick] (1+#1, \@karnaughmap@var@mapsizey@+0.8+#2) --
+      node[above=3pt, font=\small] {\@karnaughmap@var@labelA@} (2+#1, \@karnaughmap@var@mapsizey@+0.8+#2);
+  \fi
+  \ifnum\@karnaughmap@var@mapsizex@=4
+    \draw[decoration={brace,amplitude=3pt},decorate,thick] (1+#1, \@karnaughmap@var@mapsizey@+0.8+#2) --
+      node[above=3pt, font=\small] {\@karnaughmap@var@labelA@} (3+#1, \@karnaughmap@var@mapsizey@+0.8+#2);
+    \draw[decoration={brace,amplitude=3pt},decorate,thick] (2+#1, \@karnaughmap@var@mapsizey@+1.4+#2) --
+      node[above=3pt, font=\small] {\@karnaughmap@var@labelB@} (4+#1, \@karnaughmap@var@mapsizey@+1.4+#2);
+  \fi
+  % Rows
+  \ifnum\@karnaughmap@var@mapsizey@=2
+    \draw[decoration={brace,amplitude=3pt},decorate,thick] (-0.8+#1, 0+#2) --
+      node[left=3pt, font=\small] {\ifnum\@karnaughmap@var@mapsizex@=4 \@karnaughmap@var@labelC@ \else \@karnaughmap@var@labelB@ \fi} (-0.8+#1, 1+#2);
+  \fi
+  \ifnum\@karnaughmap@var@mapsizey@=4
+    \draw[decoration={brace,amplitude=3pt},decorate,thick] (-0.8+#1, 1+#2) --
+      node[left=3pt, font=\small] {\@karnaughmap@var@labelC@} (-0.8+#1, 3+#2);
+    \draw[decoration={brace,amplitude=3pt},decorate,thick] (-1.4+#1, 0+#2) --
+      node[left=3pt, font=\small] {\@karnaughmap@var@labelD@} (-1.4+#1, 2+#2);
   \fi
 }
 
@@ -232,8 +242,98 @@
 \newcommand{\@karnaughmap@var@labeltype@}{0}
 
 %% store colors
-\newcommand{\@karnaughmap@var@colors@}{,red,green,yellow,cyan,blue,magenta,}
+\newcommand{\@karnaughmap@var@colors@}{red,green,yellow,cyan,blue,magenta}
 \newcommand{\@karnaughmap@var@color@}{}
+\newcommand{\@karnaughmap@var@namecolor@}{}
+\newcount\@karnaughmap@local@colorloop@\relax
+\newcommand{\@karnaughmap@local@color@}{}
+\newcommand{\@karnaughmap@local@colorcount@}{}
+\newcommand{\@karnaughmap@local@colorlist@}{}
+\newcount\@karnaughmap@local@colorlen@\relax
+\newcommand{\@karnaughmap@local@colorlenstr@}{0}
+\newcount\@karnaughmap@local@colorindexmod@\relax
+\newcount\@karnaughmap@local@namecolorindexmod@\relax
+\newcount\@karnaughmap@local@namecolorindex@\relax
+\newcommand{\@karnaughmap@local@namecolorselect@}{}
+
+%% debug helper to show resolved color
+\newcommand{\@karnaughmap@func@debugcolor@}[1]{%
+  \if@karnaughmap@option@debugcolors
+    \node[anchor=north west, text=\@karnaughmap@var@color@] at (#1.north west)
+      {\tiny \@karnaughmap@var@color@};%
+  \fi
+}
+
+%% update implicant color (cycles through list)
+\newcommand{\@karnaughmap@func@updatecolor@}[0]{%
+  % select color or fall back to cyan
+  \def\@karnaughmap@local@color@{cyan}%
+  \def\@karnaughmap@local@namecolorselect@{cyan}%
+  \let\@karnaughmap@local@colorlist@\@karnaughmap@var@colors@
+  % normalize color list (strip surrounding braces and spaces)
+  \IfBeginWith{\@karnaughmap@local@colorlist@}{\{}{%
+    \StrGobbleLeft{\@karnaughmap@local@colorlist@}{1}[\@karnaughmap@local@colorlist@]
+  }{}
+  \IfEndWith{\@karnaughmap@local@colorlist@}{\}}{%
+    \StrGobbleRight{\@karnaughmap@local@colorlist@}{1}[\@karnaughmap@local@colorlist@]
+  }{}
+  \StrSubstitute{\@karnaughmap@local@colorlist@}{, }{,}[\@karnaughmap@local@colorlist@]%
+  % determine list length
+  \renewcommand{\@karnaughmap@local@colorlenstr@}{0}%
+  \StrCount{\@karnaughmap@local@colorlist@}{,}[\@karnaughmap@local@colorlenstr@]%
+  \@karnaughmap@local@colorlen@=\@karnaughmap@local@colorlenstr@\relax
+  \IfStrEq{\@karnaughmap@local@colorlist@}{}{}{%
+    \advance\@karnaughmap@local@colorlen@ by 1\relax
+  }%
+  % wrap color index to list length
+  \@karnaughmap@local@colorindexmod@=\@karnaughmap@var@colorindex@\relax
+  \ifnum\@karnaughmap@local@colorlen@>0\relax
+    \loop\ifnum\@karnaughmap@local@colorindexmod@>\numexpr\@karnaughmap@local@colorlen@-1\relax
+      \advance\@karnaughmap@local@colorindexmod@ by -\@karnaughmap@local@colorlen@\relax
+    \repeat
+  \else
+    \@karnaughmap@local@colorindexmod@=0\relax
+  \fi
+  \@karnaughmap@local@namecolorindexmod@=\@karnaughmap@local@colorindexmod@\relax
+  \ifnum\@karnaughmap@local@colorlen@>0\relax
+    \ifnum\@karnaughmap@local@namecolorindexmod@>\numexpr\@karnaughmap@local@colorlen@-1\relax
+      \advance\@karnaughmap@local@namecolorindexmod@ by -\@karnaughmap@local@colorlen@\relax
+    \fi
+  \else
+    \@karnaughmap@local@namecolorindexmod@=0\relax
+  \fi
+  \foreach \@karnaughmap@local@coloritem@ [count=\@karnaughmap@local@colorcount@ from 0] in \@karnaughmap@local@colorlist@ {%
+    \IfStrEq{\@karnaughmap@local@coloritem@}{}{}{%
+      \ifnum\@karnaughmap@local@colorcount@=\@karnaughmap@local@colorindexmod@\relax
+        \xdef\@karnaughmap@local@color@{\@karnaughmap@local@coloritem@}%
+      \fi
+      \ifnum\@karnaughmap@local@colorcount@=\@karnaughmap@local@namecolorindexmod@\relax
+        \xdef\@karnaughmap@local@namecolorselect@{\@karnaughmap@local@coloritem@}%
+      \fi
+    }%
+  }%
+  % fallback: if still cyan and list is non-empty, use first color
+  \IfStrEq{\@karnaughmap@local@color@}{cyan}{%
+    \IfSubStr{\@karnaughmap@local@colorlist@}{,}{%
+      \StrBefore{\@karnaughmap@local@colorlist@}{,}[\@karnaughmap@local@color@]%
+    }{%
+      \xdef\@karnaughmap@local@color@{\@karnaughmap@local@colorlist@}%
+    }%
+  }{}%
+  \IfStrEq{\@karnaughmap@local@namecolorselect@}{cyan}{%
+    \IfSubStr{\@karnaughmap@local@colorlist@}{,}{%
+      \StrBefore{\@karnaughmap@local@colorlist@}{,}[\@karnaughmap@local@namecolorselect@]%
+    }{%
+      \xdef\@karnaughmap@local@namecolorselect@{\@karnaughmap@local@colorlist@}%
+    }%
+  }{}%
+  % apply selected color and advance index
+  \renewcommand{\@karnaughmap@var@color@}{\@karnaughmap@local@color@}%
+  \renewcommand{\@karnaughmap@var@namecolor@}{\@karnaughmap@local@namecolorselect@}%
+  \global\advance\@karnaughmap@var@colorindex@ by 1\relax
+}
+
+
 
 %% declare package and environment options
 %% package options
@@ -242,13 +342,19 @@
   prefix=@karnaughmap@option@,
 }
 \DeclareStringOption[middle]{label}[middle]
-\DeclareStringOption[]{implicantcolors}[]
+\DeclareStringOption[]{labelsep}[]
+\DeclareStringOption[red,green,yellow,cyan,blue,magenta]{implicantcolors}
 \DeclareBoolOption[false]{linestyles}
+\DeclareBoolOption[false]{debugcolors}
+\DeclareBoolOption[true]{mintermnames}
 \ProcessKeyvalOptions*
 %% environment options
 \define@key{karnaugh-map}{label}[middle]{\renewcommand{\@karnaughmap@option@label}{#1}}
-\define@key{karnaugh-map}{implicantcolors}[]{\renewcommand{\@karnaughmap@option@implicantcolors}{#1}}
+\define@key{karnaugh-map}{labelsep}[]{\renewcommand{\@karnaughmap@option@labelsep}{#1}}
+\define@key{karnaugh-map}{implicantcolors}[red,green,yellow,cyan,blue,magenta]{\renewcommand{\@karnaughmap@option@implicantcolors}{#1}}
 \define@key{karnaugh-map}{linestyles}[false]{\@karnaughmap@option@linestylestrue}
+\define@key{karnaugh-map}{debugcolors}[true]{\@karnaughmap@option@debugcolorstrue}
+\define@key{karnaugh-map}{mintermnames}[true]{\@karnaughmap@option@mintermnamestrue}
 
 %% render in black and white or color default to '0'(false/color)
 \newcommand{\@karnaughmap@var@bw@}{0}
@@ -329,23 +435,41 @@
 % ^^A ##########################################################################
 % ^^A ##########################################################################
 \NewDocumentEnvironment{karnaugh-map}{D(){} s O{4} O{4} O{1}} {%
-  \begingroup
+  \begingroup\tracinglostchars=0\relax
     % parse environment options
     \setkeys{karnaugh-map}{#1}%
     %
     % check if implicant colors are specified
     \IfStrEq{\@karnaughmap@option@implicantcolors}{}{}{%
+      \newcommand{\@karnaughmap@local@colorsopt@}{}%
+      \renewcommand{\@karnaughmap@local@colorsopt@}{\@karnaughmap@option@implicantcolors}%
+      % strip surrounding braces if present
+      \IfBeginWith{\@karnaughmap@local@colorsopt@}{\{}{
+        \StrGobbleLeft{\@karnaughmap@local@colorsopt@}{1}[\@karnaughmap@local@colorsopt@]
+      }{}
+      \IfEndWith{\@karnaughmap@local@colorsopt@}{\}}{
+        \StrGobbleRight{\@karnaughmap@local@colorsopt@}{1}[\@karnaughmap@local@colorsopt@]
+      }{}
+      % remove spaces after commas
+      \StrSubstitute{\@karnaughmap@local@colorsopt@}{, }{,}[\@karnaughmap@local@colorsopt@]%
       % ensure no empty colors are specified
-      \IfSubStr{\@karnaughmap@option@implicantcolors}{,,}{%
+      \IfSubStr{\@karnaughmap@local@colorsopt@}{,,}{%
         \PackageError{karnaugh-map}{%
           Incorrect usage of option implicantcolors%
         }{%
           The option implicantcolors is a comma separated list of colors with no gap. You used two consecutive commas.%
         }%
       }{}%
-      % add comma at beginning and end. then remove duplicates
-      \StrSubstitute{,\@karnaughmap@option@implicantcolors,}{,,}{,}[\@karnaughmap@var@colors@]%
+      % remove duplicate commas (if any) and store
+      \StrSubstitute{\@karnaughmap@local@colorsopt@}{,,}{,}[\@karnaughmap@var@colors@]%
     }%
+    % reset implicant color index per map
+    \global\@karnaughmap@var@colorindex@=0\relax
+    \global\@karnaughmap@var@colorindexnext@=1\relax
+    \renewcommand{\@karnaughmap@var@color@}{}%
+    \renewcommand{\@karnaughmap@var@namecolor@}{}%
+    % reset used cells per map
+    \renewcommand{\@karnaughmap@var@usedcells@}{,}%
     %
     % determinate if markings should be color or black and white
     \IfBooleanTF{#2}{%
@@ -394,7 +518,7 @@
         \IfValueT{#2}{\renewcommand{\@karnaughmap@var@labelB@}{#2}}%
         \IfValueT{#3}{\renewcommand{\@karnaughmap@var@labelC@}{#3}}%
         \renewcommand{\@karnaughmap@var@labelX@}{\@karnaughmap@var@labelA@}%
-        \renewcommand{\@karnaughmap@var@labelY@}{\@karnaughmap@var@labelC@\@karnaughmap@var@labelB@}%
+        \renewcommand{\@karnaughmap@var@labelY@}{\@karnaughmap@var@labelC@\@karnaughmap@option@labelsep\@karnaughmap@var@labelB@}%
         \renewcommand{\@karnaughmap@var@labeltype@}{2}%
       \fi
     \fi
@@ -410,7 +534,7 @@
         \IfValueT{#1}{\renewcommand{\@karnaughmap@var@labelA@}{#1}}%
         \IfValueT{#2}{\renewcommand{\@karnaughmap@var@labelB@}{#2}}%
         \IfValueT{#3}{\renewcommand{\@karnaughmap@var@labelC@}{#3}}%
-        \renewcommand{\@karnaughmap@var@labelX@}{\@karnaughmap@var@labelB@\@karnaughmap@var@labelA@}%
+        \renewcommand{\@karnaughmap@var@labelX@}{\@karnaughmap@var@labelB@\@karnaughmap@option@labelsep\@karnaughmap@var@labelA@}%
         \renewcommand{\@karnaughmap@var@labelY@}{\@karnaughmap@var@labelC@}%
         \renewcommand{\@karnaughmap@var@labeltype@}{2}%
       \fi
@@ -428,8 +552,8 @@
         \IfValueT{#2}{\renewcommand{\@karnaughmap@var@labelB@}{#2}}%
         \IfValueT{#3}{\renewcommand{\@karnaughmap@var@labelC@}{#3}}%
         \IfValueT{#4}{\renewcommand{\@karnaughmap@var@labelD@}{#4}}%
-        \renewcommand{\@karnaughmap@var@labelX@}{\@karnaughmap@var@labelB@\@karnaughmap@var@labelA@}%
-        \renewcommand{\@karnaughmap@var@labelY@}{\@karnaughmap@var@labelD@\@karnaughmap@var@labelC@}%
+        \renewcommand{\@karnaughmap@var@labelX@}{\@karnaughmap@var@labelB@\@karnaughmap@option@labelsep\@karnaughmap@var@labelA@}%
+        \renewcommand{\@karnaughmap@var@labelY@}{\@karnaughmap@var@labelD@\@karnaughmap@option@labelsep\@karnaughmap@var@labelC@}%
         \renewcommand{\@karnaughmap@var@labeltype@}{2}%
       \fi
     \fi
@@ -448,8 +572,8 @@
         \IfValueT{#3}{\renewcommand{\@karnaughmap@var@labelC@}{#3}}%
         \IfValueT{#4}{\renewcommand{\@karnaughmap@var@labelD@}{#4}}%
         \IfValueT{#5}{\renewcommand{\@karnaughmap@var@labelE@}{#5}}%
-        \renewcommand{\@karnaughmap@var@labelX@}{\@karnaughmap@var@labelB@\@karnaughmap@var@labelA@}%
-        \renewcommand{\@karnaughmap@var@labelY@}{\@karnaughmap@var@labelD@\@karnaughmap@var@labelC@}%
+        \renewcommand{\@karnaughmap@var@labelX@}{\@karnaughmap@var@labelB@\@karnaughmap@option@labelsep\@karnaughmap@var@labelA@}%
+        \renewcommand{\@karnaughmap@var@labelY@}{\@karnaughmap@var@labelD@\@karnaughmap@option@labelsep\@karnaughmap@var@labelC@}%
         \renewcommand{\@karnaughmap@var@labelZ@}{\@karnaughmap@var@labelE@}%
         \renewcommand{\@karnaughmap@var@labeltype@}{2}%
       \fi
@@ -470,9 +594,9 @@
         \IfValueT{#4}{\renewcommand{\@karnaughmap@var@labelD@}{#4}}%
         \IfValueT{#5}{\renewcommand{\@karnaughmap@var@labelE@}{#5}}%
         \IfValueT{#6}{\renewcommand{\@karnaughmap@var@labelF@}{#6}}%
-        \renewcommand{\@karnaughmap@var@labelX@}{\@karnaughmap@var@labelB@\@karnaughmap@var@labelA@}%
-        \renewcommand{\@karnaughmap@var@labelY@}{\@karnaughmap@var@labelD@\@karnaughmap@var@labelC@}%
-        \renewcommand{\@karnaughmap@var@labelZ@}{\@karnaughmap@var@labelF@\@karnaughmap@var@labelE@}%
+        \renewcommand{\@karnaughmap@var@labelX@}{\@karnaughmap@var@labelB@\@karnaughmap@option@labelsep\@karnaughmap@var@labelA@}%
+        \renewcommand{\@karnaughmap@var@labelY@}{\@karnaughmap@var@labelD@\@karnaughmap@option@labelsep\@karnaughmap@var@labelC@}%
+        \renewcommand{\@karnaughmap@var@labelZ@}{\@karnaughmap@var@labelF@\@karnaughmap@option@labelsep\@karnaughmap@var@labelE@}%
         \renewcommand{\@karnaughmap@var@labeltype@}{2}%
       \fi
     \fi
@@ -564,6 +688,8 @@
       Existing templates have the following dimensions: 2x2x1, 2x4x1, 4x2x1, 4x4x1, 4x4x2, and 4x4x4.
     }%
   \fi
+  \pgfdeclarelayer{foreground}
+  \pgfsetlayers{background,main,foreground}
   \begin{tikzpicture}[
     LineStyleA/.style={semithick,solid},
     LineStyleB/.style={semithick,dash dot dot},
@@ -610,28 +736,77 @@
           \node[below] at (7,-5.1) {\small{\@karnaughmap@var@labelZ@$=11$}};
         \fi
       }{%
-        % if variables should be positioned in the middle(top and side). Default.
-        %
-        % for all dimensions
-        \node[above] at (\@karnaughmap@var@mapsizex@*0.5,\@karnaughmap@var@mapsizey@+0.9) {\small{\@karnaughmap@var@labelX@}};
-        \node[left] at (-0.9,\@karnaughmap@var@mapsizey@*0.5) {\small{\@karnaughmap@var@labelY@}};
-        % when there are 2 sub maps
-        \ifnum\@karnaughmap@var@mapsizez@=2
-          \node[above] at (7,4.9) {\small{\@karnaughmap@var@labelX@}};
-          % extra sub map labels
-          \node[below] at (2,-0.1) {\small{\@karnaughmap@var@labelZ@$=0$}};
-          \node[below] at (7,-0.1) {\small{\@karnaughmap@var@labelZ@$=1$}};
-        \fi
-        % when there are 4 sub maps
-        \ifnum\@karnaughmap@var@mapsizez@=4
-          \node[above] at (7,4.9) {\small{\@karnaughmap@var@labelX@}};
-          \node[left] at (-0.9,-3) {\small{\@karnaughmap@var@labelY@}};
-          % extra sub map labels
-          \node[below] at (2,-0.1) {\small{\@karnaughmap@var@labelZ@$=00$}};
-          \node[below] at (7,-0.1) {\small{\@karnaughmap@var@labelZ@$=01$}};
-          \node[below] at (2,-5.1) {\small{\@karnaughmap@var@labelZ@$=10$}};
-          \node[below] at (7,-5.1) {\small{\@karnaughmap@var@labelZ@$=11$}};
-        \fi
+        \IfStrEq{\@karnaughmap@option@label}{braces}{%
+          % if variables should be positioned using curly braces
+          \draw[color=black, ultra thin] (0,\@karnaughmap@var@mapsizey@) --
+            node[pos=0.5, above right, anchor=south, rotate=-45] {\small{\@karnaughmap@var@labelX@}}
+            node[pos=0.5, below left, anchor=north, rotate=-45] {\small{\@karnaughmap@var@labelY@}}
+            ++(135:1);
+          \@karnaughmap@func@drawbraces@{\@karnaughmap@local@maprealignmentx@}{\@karnaughmap@local@maprealignmenty@}
+          % when there are 2 sub maps
+          \ifnum\@karnaughmap@var@mapsizez@=2
+            % only top braces are repeated for 442
+            \ifnum\@karnaughmap@var@mapsizex@=4
+              \draw[decoration={brace,amplitude=3pt},decorate,thick] (6, \@karnaughmap@var@mapsizey@+0.6) -- 
+                node[above=3pt, font=\small] {\@karnaughmap@var@labelA@} (8, \@karnaughmap@var@mapsizey@+0.6);
+              \draw[decoration={brace,amplitude=3pt},decorate,thick] (7, \@karnaughmap@var@mapsizey@+1.2) -- 
+                node[above=3pt, font=\small] {\@karnaughmap@var@labelB@} (9, \@karnaughmap@var@mapsizey@+1.2);
+            \fi
+            % extra sub map labels
+            \node[below] at (2,-0.1) {\small{\@karnaughmap@var@labelZ@$=0$}};
+            \node[below] at (7,-0.1) {\small{\@karnaughmap@var@labelZ@$=1$}};
+          \fi
+          % when there are 4 sub maps
+          \ifnum\@karnaughmap@var@mapsizez@=4
+             \ifnum\@karnaughmap@var@mapsizex@=4
+              \draw[decoration={brace,amplitude=3pt},decorate,thick] (6, \@karnaughmap@var@mapsizey@+0.6) -- 
+                node[above=3pt, font=\small] {\@karnaughmap@var@labelA@} (8, \@karnaughmap@var@mapsizey@+0.6);
+              \draw[decoration={brace,amplitude=3pt},decorate,thick] (7, \@karnaughmap@var@mapsizey@+1.2) -- 
+                node[above=3pt, font=\small] {\@karnaughmap@var@labelB@} (9, \@karnaughmap@var@mapsizey@+1.2);
+              \draw[decoration={brace,amplitude=3pt},decorate,thick] (1, -5+0.6) -- 
+                node[above=3pt, font=\small] {\@karnaughmap@var@labelA@} (3, -5+0.6);
+              \draw[decoration={brace,amplitude=3pt},decorate,thick] (2, -5+1.2) -- 
+                node[above=3pt, font=\small] {\@karnaughmap@var@labelB@} (4, -5+1.2);
+              \draw[decoration={brace,amplitude=3pt},decorate,thick] (6, -5+0.6) -- 
+                node[above=3pt, font=\small] {\@karnaughmap@var@labelA@} (8, -5+0.6);
+              \draw[decoration={brace,amplitude=3pt},decorate,thick] (7, -5+1.2) -- 
+                node[above=3pt, font=\small] {\@karnaughmap@var@labelB@} (9, -5+1.2);
+            \fi
+            % row braces for Map 10 and 11
+            \draw[decoration={brace,amplitude=3pt,mirror},decorate,thick] (-0.6, -4) -- 
+              node[left=3pt, font=\small] {\@karnaughmap@var@labelC@} (-0.6, -2);
+            \draw[decoration={brace,amplitude=3pt,mirror},decorate,thick] (-1.2, -5) -- 
+              node[left=3pt, font=\small] {\@karnaughmap@var@labelD@} (-1.2, -3);
+            % extra sub map labels
+            \node[below] at (2,-0.1) {\small{\@karnaughmap@var@labelZ@$=00$}};
+            \node[below] at (7,-0.1) {\small{\@karnaughmap@var@labelZ@$=01$}};
+            \node[below] at (2,-5.1) {\small{\@karnaughmap@var@labelZ@$=10$}};
+            \node[below] at (7,-5.1) {\small{\@karnaughmap@var@labelZ@$=11$}};
+          \fi
+        }{%
+          % if variables should be positioned in the middle(top and side). Default.
+          %
+          % for all dimensions
+          \node[above] at (\@karnaughmap@var@mapsizex@*0.5,\@karnaughmap@var@mapsizey@+0.9) {\small{\@karnaughmap@var@labelX@}};
+          \node[left] at (-0.9,\@karnaughmap@var@mapsizey@*0.5) {\small{\@karnaughmap@var@labelY@}};
+          % when there are 2 sub maps
+          \ifnum\@karnaughmap@var@mapsizez@=2
+            \node[above] at (7,4.9) {\small{\@karnaughmap@var@labelX@}};
+            % extra sub map labels
+            \node[below] at (2,-0.1) {\small{\@karnaughmap@var@labelZ@$=0$}};
+            \node[below] at (7,-0.1) {\small{\@karnaughmap@var@labelZ@$=1$}};
+          \fi
+          % when there are 4 sub maps
+          \ifnum\@karnaughmap@var@mapsizez@=4
+            \node[above] at (7,4.9) {\small{\@karnaughmap@var@labelX@}};
+            \node[left] at (-0.9,-3) {\small{\@karnaughmap@var@labelY@}};
+            % extra sub map labels
+            \node[below] at (2,-0.1) {\small{\@karnaughmap@var@labelZ@$=00$}};
+            \node[below] at (7,-0.1) {\small{\@karnaughmap@var@labelZ@$=01$}};
+            \node[below] at (2,-5.1) {\small{\@karnaughmap@var@labelZ@$=10$}};
+            \node[below] at (7,-5.1) {\small{\@karnaughmap@var@labelZ@$=11$}};
+          \fi
+        }%
       }
     % [END]}
     % data
@@ -643,6 +818,23 @@
     ] at (\@karnaughmap@var@mapsizex@*0.5+\@karnaughmap@local@maprealignmentx@,\@karnaughmap@var@mapsizey@*0.5+\@karnaughmap@local@maprealignmenty@) {
       \@karnaughmap@local@matrixtemplate@%
     };
+    % minterm names (tiny, bottom-right of each cell)
+    \if@karnaughmap@option@mintermnames
+      \begingroup
+        \newcount\@karnaughmap@local@mintermmax@\relax
+        \@karnaughmap@local@mintermmax@=\@karnaughmap@var@mapsizex@\relax
+        \multiply\@karnaughmap@local@mintermmax@ by \@karnaughmap@var@mapsizey@\relax
+        \multiply\@karnaughmap@local@mintermmax@ by \@karnaughmap@var@mapsizez@\relax
+        \advance\@karnaughmap@local@mintermmax@ by -1\relax
+        \begin{scope}[on background layer]
+          \foreach \cell in {0,1,2,...,\the\@karnaughmap@local@mintermmax@} {%
+            \node[anchor=south east, inner sep=0pt, text=gray] at
+              ($ (\@karnaughmap@func@decimaltobin@{\cell}.center)+(0.48,-0.48) $)
+              {\tiny $m_{\cell}$};
+          }%
+        \end{scope}
+      \endgroup
+    \fi
 }
 % ^^A ##########################################################################
 % ^^A ##########################################################################
@@ -708,31 +900,25 @@
   % bail if outside environment karnaugh-map
   \@karnaughmap@func@bailoutsideenvironment@{}
   %
-  \begingroup
-    % calculate max cell number {[START]
-      \@karnaughmap@local@max@=\@karnaughmap@var@mapsizex@\relax
-      \multiply\@karnaughmap@local@max@ by \@karnaughmap@var@mapsizey@\relax
-      \multiply\@karnaughmap@local@max@ by \@karnaughmap@var@mapsizez@\relax
-      \advance\@karnaughmap@local@max@ by -1\relax
-    % [END]}
-    % fill terms
+  \def\@karnaughmap@local@autotermscontent@{#1}%
+  % calculate max cell number {[START]
+    \@karnaughmap@local@max@=\@karnaughmap@var@mapsizex@\relax
+    \multiply\@karnaughmap@local@max@ by \@karnaughmap@var@mapsizey@\relax
+    \multiply\@karnaughmap@local@max@ by \@karnaughmap@var@mapsizez@\relax
+    \advance\@karnaughmap@local@max@ by -1\relax
+  % [END]}
+  % fill terms
+  \begin{pgfonlayer}{foreground}
     \foreach \cell in {0,1,2,...,\@karnaughmap@local@max@} {%
+      % only write to cell if it is empty otherwise fail silently
       \IfSubStr{\@karnaughmap@var@usedcells@}{,\cell,}{}{%
-        \path (\@karnaughmap@func@decimaltobin@{\cell}) node {#1};
-      }
-    }
-  \endgroup
-  % update \@karnaughmap@var@usedcells@ (all cells are used now)
-  \renewcommand{\@karnaughmap@var@usedcells@}{,0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24,25,26,27,28,29,30,31,32,33,34,35,36,37,38,39,40,41,42,43,44,45,46,47,48,49,50,51,52,53,54,55,56,57,58,59,60,61,62,63,}
+        \node[text=black] at (\@karnaughmap@func@decimaltobin@{\cell}) {\@karnaughmap@local@autotermscontent@};
+        % update \@karnaughmap@var@usedcells@ (per-map scope)
+        \expandafter\def\expandafter\@karnaughmap@var@usedcells@\expandafter{\@karnaughmap@var@usedcells@\cell,}%
+      }%
+    }%
+  \end{pgfonlayer}
 }
-% ^^A ##########################################################################
-% ^^A ##########################################################################
-% ^^A ####                             /CODE                                ####
-% ^^A ##########################################################################
-% ^^A ##########################################################################
-%    \end{macrocode}
-% \fi
-% \end{macro}
 %
 % \begin{macro}{\indeterminants}
 %    The |\indeterminants| command fills the specified cells with ''-'' if they aren't already filled. Order of the cell numbers does not matter.
@@ -914,6 +1100,46 @@
 % \fi
 % \end{macro}
 %
+% \begin{macro}{\donotcareterms}
+%    The |\donotcareterms| command fills the specified cells with ''x'' if they aren't already filled. Order of the cell numbers does not matter.
+%
+%    \textbf{Usage:}
+%
+%    \begin{tabularx}{\textwidth}{l X}
+%      \small{|\donotcareterms|}  & \\
+%      \small{\marg{cells}} & \small{Comma separated list of cells to fill with ''x''} \\
+%    \end{tabularx}
+%
+%    \textbf{Example:}
+%
+%    Fill the top left and right cell with ''x''.
+%    \begin{verbatim}
+%\begin{karnaugh-map}
+%  \donotcareterms{0,2}
+%\end{karnaugh-map}
+%    \end{verbatim}
+% \iffalse code
+%    \begin{macrocode}
+% ^^A ##########################################################################
+% ^^A ##########################################################################
+% ^^A ####                              CODE                                ####
+% ^^A ##########################################################################
+% ^^A ##########################################################################
+\DeclareDocumentCommand{\donotcareterms}{m} {%
+  % bail if outside environment karnaugh-map
+  \@karnaughmap@func@bailoutsideenvironment@{}
+  %
+  \terms{#1}{\small x}
+}
+% ^^A ##########################################################################
+% ^^A ##########################################################################
+% ^^A ####                             /CODE                                ####
+% ^^A ##########################################################################
+% ^^A ##########################################################################
+%    \end{macrocode}
+% \fi
+% \end{macro}
+%
 % \begin{macro}{\terms}
 %    \changes{v1.1}{2017/02/06}{Support user specified term content and variable entered maps}
 %    The |\terms| command fills the specified cells with the specified content if they aren't already filled. Order of the cell numbers does not matter.
@@ -981,6 +1207,39 @@
 \@karnaughmap@var@colorindex@=0\relax
 \@karnaughmap@var@colorindexnext@=1\relax
 
+%% implicant name options (local per implicant command)
+\newcommand{\@karnaughmap@var@implicantname@}{}
+%% style applied inside the node content (e.g. \scriptsize, \tiny\bfseries)
+\newcommand{\@karnaughmap@var@implicantnamestyle@}{\scriptsize}
+%% where to place the name: 'center' (default), 'below', or 'outside'
+\newcommand{\@karnaughmap@var@implicantnamepos@}{center}
+%% per-implicant color overrides
+\newcommand{\@karnaughmap@var@implicantcolor@}{}
+\newcommand{\@karnaughmap@var@implicantnamecolor@}{}
+%% outside label placement controls
+\newcommand{\@karnaughmap@var@implicantnamegap@}{1mm}
+\newcommand{\@karnaughmap@var@implicantnameangle@}{90}
+\newcommand{\@karnaughmap@var@implicantnamedistance@}{10mm}
+\newcommand{\@karnaughmap@var@implicantnamearrowstyle@}{->}
+\define@key{karnaugh-map-implicant}{name}{\renewcommand{\@karnaughmap@var@implicantname@}{#1}}
+\define@key{karnaugh-map-implicant}{namestyle}{\renewcommand{\@karnaughmap@var@implicantnamestyle@}{#1}}
+\define@key{karnaugh-map-implicant}{namepos}{\renewcommand{\@karnaughmap@var@implicantnamepos@}{#1}}
+\define@key{karnaugh-map-implicant}{color}{\renewcommand{\@karnaughmap@var@implicantcolor@}{#1}}
+\define@key{karnaugh-map-implicant}{namecolor}{\renewcommand{\@karnaughmap@var@implicantnamecolor@}{#1}}
+\define@key{karnaugh-map-implicant}{namegap}{\renewcommand{\@karnaughmap@var@implicantnamegap@}{#1}}
+\define@key{karnaugh-map-implicant}{nameangle}{\renewcommand{\@karnaughmap@var@implicantnameangle@}{#1}}
+\define@key{karnaugh-map-implicant}{namedistance}{\renewcommand{\@karnaughmap@var@implicantnamedistance@}{#1}}
+\define@key{karnaugh-map-implicant}{namearrowstyle}{\renewcommand{\@karnaughmap@var@implicantnamearrowstyle@}{#1}}
+
+%% label placement helpers (allocated once)
+\newcount\@karnaughmap@local@labela@\relax
+\newcount\@karnaughmap@local@labelb@\relax
+\newcount\@karnaughmap@local@labelc@\relax
+\newcount\@karnaughmap@local@labeld@\relax
+\newcount\@karnaughmap@local@centerone@\relax
+\newcount\@karnaughmap@local@centertwo@\relax
+\newcount\@karnaughmap@local@target@\relax
+
 % ^^A ##########################################################################
 % ^^A ##########################################################################
 % ^^A ####                             /CODE                                ####
@@ -1042,7 +1301,7 @@
 % ^^A ##########################################################################
 \newcount\@karnaughmap@local@northwest@\relax
 \newcount\@karnaughmap@local@southeast@\relax
-\DeclareDocumentCommand{\implicant}{m m O{0}} {%
+\DeclareDocumentCommand{\implicant}{D(){} m m O{0}} {%
   % bail if outside environment karnaugh-map
   \@karnaughmap@func@bailoutsideenvironment@{}
   %
@@ -1050,8 +1309,25 @@
   \@karnaughmap@func@updatecolor@{}
   %
   \begingroup
+    % parse per-implicant options (e.g. name=..., namestyle=...)
+    \renewcommand{\@karnaughmap@var@implicantname@}{}%
+    \renewcommand{\@karnaughmap@var@implicantnamestyle@}{\scriptsize}%
+    \renewcommand{\@karnaughmap@var@implicantnamepos@}{center}%
+    \renewcommand{\@karnaughmap@var@implicantcolor@}{}%
+    \renewcommand{\@karnaughmap@var@implicantnamecolor@}{}%
+    \renewcommand{\@karnaughmap@var@implicantnamegap@}{1mm}%
+    \renewcommand{\@karnaughmap@var@implicantnameangle@}{90}%
+    \renewcommand{\@karnaughmap@var@implicantnamedistance@}{10mm}%
+    \renewcommand{\@karnaughmap@var@implicantnamearrowstyle@}{->}%
+    \setkeys{karnaugh-map-implicant}{#1}%
+    \newcommand{\@karnaughmap@local@implicantcolor@}{\@karnaughmap@var@color@}%
+    \newcommand{\@karnaughmap@local@implicantopacity@}{0.25}%
+    \IfStrEq{\@karnaughmap@var@implicantcolor@}{}{}{%
+      \renewcommand{\@karnaughmap@local@implicantcolor@}{\@karnaughmap@var@implicantcolor@}%
+      \renewcommand{\@karnaughmap@local@implicantopacity@}{1.0}%
+    }%
     % loop through specified sub maps
-    \foreach \map in {#3} {%
+    \foreach \map in {#4} {%
       % make sure we don't try to draw on non existing sub maps
       \ifnum\map<\@karnaughmap@var@mapsizez@
         % calculate cell number for the specified sub maps {[START]
@@ -1059,15 +1335,16 @@
           \@karnaughmap@local@southeast@=\map\relax
           \multiply\@karnaughmap@local@northwest@ by 16\relax
           \multiply\@karnaughmap@local@southeast@ by 16\relax
-          \advance\@karnaughmap@local@northwest@ by #1\relax
-          \advance\@karnaughmap@local@southeast@ by #2\relax
+          \advance\@karnaughmap@local@northwest@ by #2\relax
+          \advance\@karnaughmap@local@southeast@ by #3\relax
         % [END]}
         % only fill marking when \@karnaughmap@var@bw@ = '0'
         \ifnum0=\@karnaughmap@var@bw@
           \fill[
             rounded corners=3pt,
-            fill=\@karnaughmap@var@color@,
-            fill opacity=0.25,
+            on background layer,
+            fill=\@karnaughmap@local@implicantcolor@,
+            fill opacity=\@karnaughmap@local@implicantopacity@,
           ] {
             ($(\@karnaughmap@func@decimaltobin@{\@karnaughmap@local@northwest@}.center)+(-0.3,0.3)$)
             rectangle
@@ -1076,6 +1353,7 @@
         \fi
         \draw[
           rounded corners=3pt,
+          draw=\@karnaughmap@local@implicantcolor@,
           draw opacity=1.0,
           \@karnaughmap@func@decimaltolinestyle@{\@karnaughmap@var@colorindex@},
         ] {
@@ -1083,6 +1361,54 @@
           rectangle
           ($(\@karnaughmap@func@decimaltobin@{\@karnaughmap@local@southeast@}.center)+(0.3,-0.3)$)
         };
+        \@karnaughmap@func@debugcolor@{\@karnaughmap@func@decimaltobin@{\@karnaughmap@local@northwest@}}%
+
+        % optional implicant name
+        \IfStrEq{\@karnaughmap@var@implicantname@}{}{}{% 
+          \newcommand{\@karnaughmap@local@namecolor@}{black}%
+          \ifnum0=\@karnaughmap@var@bw@\relax
+            \renewcommand{\@karnaughmap@local@namecolor@}{\@karnaughmap@var@namecolor@}%
+          \fi
+          \IfStrEq{\@karnaughmap@var@implicantnamecolor@}{}{}{%
+            \renewcommand{\@karnaughmap@local@namecolor@}{\@karnaughmap@var@implicantnamecolor@}%
+          }%
+          \IfStrEq{\@karnaughmap@var@implicantnamepos@}{below}{%
+            % place label under smallest minterm (numeric) among defining cells
+            \@karnaughmap@local@target@=\@karnaughmap@local@northwest@\relax
+            \ifnum\@karnaughmap@local@southeast@<\@karnaughmap@local@target@\relax
+              \@karnaughmap@local@target@=\@karnaughmap@local@southeast@\relax
+            \fi
+            \node[anchor=north,text=\@karnaughmap@local@namecolor@] at ($( 
+              \@karnaughmap@func@decimaltobin@{\@karnaughmap@local@target@}.south
+            )+(0,-0.15)$) {{\@karnaughmap@var@implicantnamestyle@ \@karnaughmap@var@implicantname@}};
+          }{\IfStrEq{\@karnaughmap@var@implicantnamepos@}{outside}{%
+            % place label outside and connect with an arrow that hits the implicant border
+            \@karnaughmap@local@target@=\@karnaughmap@local@northwest@\relax
+            \ifnum\@karnaughmap@local@southeast@<\@karnaughmap@local@target@\relax
+              \@karnaughmap@local@target@=\@karnaughmap@local@southeast@\relax
+            \fi
+            \coordinate (kmapTmpTargetCenter) at (\@karnaughmap@func@decimaltobin@{\@karnaughmap@local@target@}.center);
+            \path[name path=kmapTmpImplicantOutline]
+              ($ (\@karnaughmap@func@decimaltobin@{\@karnaughmap@local@northwest@}.center)+(-0.3,0.3) $)
+              rectangle
+              ($ (\@karnaughmap@func@decimaltobin@{\@karnaughmap@local@southeast@}.center)+(0.3,-0.3) $);
+            \coordinate (kmapTmpLabelPos) at
+              ($ (kmapTmpTargetCenter)+(\@karnaughmap@var@implicantnameangle@: \@karnaughmap@var@implicantnamedistance@) $);
+            \node[text=\@karnaughmap@local@namecolor@] (kmapTmpLabelNode) at (kmapTmpLabelPos)
+              {{\@karnaughmap@var@implicantnamestyle@ \@karnaughmap@var@implicantname@}};
+            \path[name path=kmapTmpArrowLine] (kmapTmpLabelNode.center) -- (kmapTmpTargetCenter);
+            \path[name intersections={of=kmapTmpArrowLine and kmapTmpImplicantOutline, by=kmapTmpArrowHit}];
+            \draw[
+              draw=\@karnaughmap@local@namecolor@,
+              \@karnaughmap@var@implicantnamearrowstyle@,
+              shorten <=\@karnaughmap@var@implicantnamegap@,
+            ] (kmapTmpLabelNode.center) -- (kmapTmpArrowHit);
+          }{%
+            \node[text=\@karnaughmap@local@namecolor@] at
+              ($(\@karnaughmap@func@decimaltobin@{\@karnaughmap@local@northwest@}.center)!0.5!(\@karnaughmap@func@decimaltobin@{\@karnaughmap@local@southeast@}.center)$)
+              {{\@karnaughmap@var@implicantnamestyle@ \@karnaughmap@var@implicantname@}};
+          }}%
+        }%
       \else
         \PackageWarning{karnaugh-map}{%
           You can only draw on existing sub maps.
@@ -1143,7 +1469,7 @@
 \newcount\@karnaughmap@local@testcasetwo@\relax
 \newcount\@karnaughmap@local@coordinateonecounter@\relax
 \newcount\@karnaughmap@local@coordinatetwocounter@\relax
-\DeclareDocumentCommand{\implicantedge}{m m m m O{0}} {%
+\DeclareDocumentCommand{\implicantedge}{D(){} m m m m O{0}} {%
   % bail if outside environment karnaugh-map
   \@karnaughmap@func@bailoutsideenvironment@{}
   %
@@ -1151,6 +1477,21 @@
   \@karnaughmap@func@updatecolor@{}
   %
   \begingroup
+    % parse per-implicant options (e.g. name=..., namestyle=...)
+    \renewcommand{\@karnaughmap@var@implicantname@}{}%
+    \renewcommand{\@karnaughmap@var@implicantnamestyle@}{\scriptsize}%
+    \renewcommand{\@karnaughmap@var@implicantnamepos@}{center}%
+    \renewcommand{\@karnaughmap@var@implicantcolor@}{}%
+    \renewcommand{\@karnaughmap@var@implicantnamecolor@}{}%
+    \renewcommand{\@karnaughmap@var@implicantnamegap@}{1mm}%
+    \renewcommand{\@karnaughmap@var@implicantnameangle@}{90}%
+    \renewcommand{\@karnaughmap@var@implicantnamedistance@}{10mm}%
+    \renewcommand{\@karnaughmap@var@implicantnamearrowstyle@}{->}%
+    \setkeys{karnaugh-map-implicant}{#1}%
+    \newcommand{\@karnaughmap@local@implicantcolor@}{\@karnaughmap@var@color@}%
+    \IfStrEq{\@karnaughmap@var@implicantcolor@}{}{}{%
+      \renewcommand{\@karnaughmap@local@implicantcolor@}{\@karnaughmap@var@implicantcolor@}%
+    }%
     % helper variables {[START]
       \newcommand{\@karnaughmap@local@orientation@}{0} % '0' is a vertical and '1' is a horizontal implicant
       \newcommand{\@karnaughmap@local@coordinateone@}{0}
@@ -1160,10 +1501,10 @@
       \newcommand{\@karnaughmap@local@fillcontent@}{}
     % [END]}
     % determinate if this is an horizontal or vertical implicant {[START]
-      \@karnaughmap@local@testcaseone@=#1\relax
-      \@karnaughmap@local@testcasetwo@=#1\relax
-      \advance\@karnaughmap@local@testcaseone@ by -#2\relax
-      \advance\@karnaughmap@local@testcasetwo@ by -#3\relax
+      \@karnaughmap@local@testcaseone@=#2\relax
+      \@karnaughmap@local@testcasetwo@=#2\relax
+      \advance\@karnaughmap@local@testcaseone@ by -#3\relax
+      \advance\@karnaughmap@local@testcasetwo@ by -#4\relax
       \ifnum\@karnaughmap@local@testcaseone@<0 \multiply\@karnaughmap@local@testcaseone@ by -1\relax\fi
       \ifnum\@karnaughmap@local@testcasetwo@<0 \multiply\@karnaughmap@local@testcasetwo@ by -1\relax\fi
       % test case one
@@ -1181,19 +1522,19 @@
       \fi
     % [END]}
     % loop through specified sub maps
-    \foreach \map in {#5} {%
+    \foreach \map in {#6} {%
       % make sure we don't try to draw on non existing sub maps
       \ifnum\map<\@karnaughmap@var@mapsizez@
         % loop through both parts of the marking(ie. left and right part)
         \foreach \i in {0,1} {%
           % set parameters depending on the part of the marking(ie. left and right part) {[START]
             \ifnum\i=0
-              \renewcommand{\@karnaughmap@local@coordinateone@}{#1}
-              \renewcommand{\@karnaughmap@local@coordinatetwo@}{#2}
+              \renewcommand{\@karnaughmap@local@coordinateone@}{#2}
+              \renewcommand{\@karnaughmap@local@coordinatetwo@}{#3}
               \renewcommand{\@karnaughmap@local@mirror@}{1}
             \else
-              \renewcommand{\@karnaughmap@local@coordinateone@}{#3}
-              \renewcommand{\@karnaughmap@local@coordinatetwo@}{#4}
+              \renewcommand{\@karnaughmap@local@coordinateone@}{#4}
+              \renewcommand{\@karnaughmap@local@coordinatetwo@}{#5}
               \renewcommand{\@karnaughmap@local@mirror@}{-1}
             \fi
           % [END]}
@@ -1257,7 +1598,8 @@
           \ifnum0=\@karnaughmap@var@bw@
             \fill[
               sharp corners,
-              fill=\@karnaughmap@var@color@,
+              on background layer,
+              fill=\@karnaughmap@local@implicantcolor@,
               fill opacity=0.25,
             ] {
               \@karnaughmap@local@fillcontent@%
@@ -1265,12 +1607,94 @@
           \fi
           \draw[
             sharp corners,
+            draw=\@karnaughmap@local@implicantcolor@,
             draw opacity=1.0,
             \@karnaughmap@func@decimaltolinestyle@{\@karnaughmap@var@colorindex@},
           ] {
             \@karnaughmap@local@bordercontent@%
           };
+          \@karnaughmap@func@debugcolor@{\@karnaughmap@func@decimaltobin@{\@karnaughmap@local@coordinateone@}}%
         }
+
+        % optional implicant name (placed at center of both parts)
+        \IfStrEq{\@karnaughmap@var@implicantname@}{}{}{% 
+          \newcommand{\@karnaughmap@local@namecolor@}{black}%
+          \ifnum0=\@karnaughmap@var@bw@\relax
+            \renewcommand{\@karnaughmap@local@namecolor@}{\@karnaughmap@var@namecolor@}%
+          \fi
+          \IfStrEq{\@karnaughmap@var@implicantnamecolor@}{}{}{%
+            \renewcommand{\@karnaughmap@local@namecolor@}{\@karnaughmap@var@implicantnamecolor@}%
+          }%
+          \@karnaughmap@local@labela@=\map\relax
+          \@karnaughmap@local@labelb@=\map\relax
+          \@karnaughmap@local@labelc@=\map\relax
+          \@karnaughmap@local@labeld@=\map\relax
+          \multiply\@karnaughmap@local@labela@ by 16\relax
+          \multiply\@karnaughmap@local@labelb@ by 16\relax
+          \multiply\@karnaughmap@local@labelc@ by 16\relax
+          \multiply\@karnaughmap@local@labeld@ by 16\relax
+          \advance\@karnaughmap@local@labela@ by #2\relax
+          \advance\@karnaughmap@local@labelb@ by #3\relax
+          \advance\@karnaughmap@local@labelc@ by #4\relax
+          \advance\@karnaughmap@local@labeld@ by #5\relax
+          \IfStrEq{\@karnaughmap@var@implicantnamepos@}{below}{%
+            % place label under smallest minterm (numeric) among defining cells
+            \@karnaughmap@local@target@=\@karnaughmap@local@labela@\relax
+            \ifnum\@karnaughmap@local@labelb@<\@karnaughmap@local@target@\relax\@karnaughmap@local@target@=\@karnaughmap@local@labelb@\relax\fi
+            \ifnum\@karnaughmap@local@labelc@<\@karnaughmap@local@target@\relax\@karnaughmap@local@target@=\@karnaughmap@local@labelc@\relax\fi
+            \ifnum\@karnaughmap@local@labeld@<\@karnaughmap@local@target@\relax\@karnaughmap@local@target@=\@karnaughmap@local@labeld@\relax\fi
+            \node[anchor=north,text=\@karnaughmap@local@namecolor@] at ($ (\@karnaughmap@func@decimaltobin@{\@karnaughmap@local@target@}.south) + (0,-0.15) $)
+              {{\@karnaughmap@var@implicantnamestyle@ \@karnaughmap@var@implicantname@}};
+          }{\IfStrEq{\@karnaughmap@var@implicantnamepos@}{outside}{%
+            % place label outside and connect with an arrow that hits the implicant border
+            \@karnaughmap@local@target@=\@karnaughmap@local@labela@\relax
+            \ifnum\@karnaughmap@local@labelb@<\@karnaughmap@local@target@\relax\@karnaughmap@local@target@=\@karnaughmap@local@labelb@\relax\fi
+            \ifnum\@karnaughmap@local@labelc@<\@karnaughmap@local@target@\relax\@karnaughmap@local@target@=\@karnaughmap@local@labelc@\relax\fi
+            \ifnum\@karnaughmap@local@labeld@<\@karnaughmap@local@target@\relax\@karnaughmap@local@target@=\@karnaughmap@local@labeld@\relax\fi
+            \newcommand{\@karnaughmap@local@arrowcoorone@}{\the\@karnaughmap@local@labela@}%
+            \newcommand{\@karnaughmap@local@arrowcoortwo@}{\the\@karnaughmap@local@labelb@}%
+            \newcommand{\@karnaughmap@local@arrowmirror@}{1}%
+            \ifnum\@karnaughmap@local@target@=\@karnaughmap@local@labelc@\relax
+              \renewcommand{\@karnaughmap@local@arrowcoorone@}{\the\@karnaughmap@local@labelc@}%
+              \renewcommand{\@karnaughmap@local@arrowcoortwo@}{\the\@karnaughmap@local@labeld@}%
+              \renewcommand{\@karnaughmap@local@arrowmirror@}{-1}%
+            \fi
+            \ifnum\@karnaughmap@local@target@=\@karnaughmap@local@labeld@\relax
+              \renewcommand{\@karnaughmap@local@arrowcoorone@}{\the\@karnaughmap@local@labelc@}%
+              \renewcommand{\@karnaughmap@local@arrowcoortwo@}{\the\@karnaughmap@local@labeld@}%
+              \renewcommand{\@karnaughmap@local@arrowmirror@}{-1}%
+            \fi
+            \coordinate (kmapTmpTargetCenter) at (\@karnaughmap@func@decimaltobin@{\@karnaughmap@local@target@}.center);
+            \ifnum\@karnaughmap@local@orientation@=0
+              \path[name path=kmapTmpImplicantOutline]
+                ($ (\@karnaughmap@func@decimaltobin@{\@karnaughmap@local@arrowcoorone@}.center)+(-.3,.6*\@karnaughmap@local@arrowmirror@) $) --
+                ($ (\@karnaughmap@func@decimaltobin@{\@karnaughmap@local@arrowcoortwo@}.center)+(.3,.6*\@karnaughmap@local@arrowmirror@) $) --
+                ($ (\@karnaughmap@func@decimaltobin@{\@karnaughmap@local@arrowcoortwo@}.center)+(.3,-.3*\@karnaughmap@local@arrowmirror@) $) --
+                ($ (\@karnaughmap@func@decimaltobin@{\@karnaughmap@local@arrowcoorone@}.center)+(-.3,-.3*\@karnaughmap@local@arrowmirror@) $) -- cycle;
+            \else
+              \path[name path=kmapTmpImplicantOutline]
+                ($ (\@karnaughmap@func@decimaltobin@{\@karnaughmap@local@arrowcoortwo@}.center)+(-.6*\@karnaughmap@local@arrowmirror@,-.3) $) --
+                ($ (\@karnaughmap@func@decimaltobin@{\@karnaughmap@local@arrowcoorone@}.center)+(-.6*\@karnaughmap@local@arrowmirror@,.3) $) --
+                ($ (\@karnaughmap@func@decimaltobin@{\@karnaughmap@local@arrowcoorone@}.center)+(.3*\@karnaughmap@local@arrowmirror@,.3) $) --
+                ($ (\@karnaughmap@func@decimaltobin@{\@karnaughmap@local@arrowcoortwo@}.center)+(.3*\@karnaughmap@local@arrowmirror@,-.3) $) -- cycle;
+            \fi
+            \coordinate (kmapTmpLabelPos) at
+              ($ (kmapTmpTargetCenter)+(\@karnaughmap@var@implicantnameangle@: \@karnaughmap@var@implicantnamedistance@) $);
+            \node[text=\@karnaughmap@local@namecolor@] (kmapTmpLabelNode) at (kmapTmpLabelPos)
+              {{\@karnaughmap@var@implicantnamestyle@ \@karnaughmap@var@implicantname@}};
+            \path[name path=kmapTmpArrowLine] (kmapTmpLabelNode.center) -- (kmapTmpTargetCenter);
+            \path[name intersections={of=kmapTmpArrowLine and kmapTmpImplicantOutline, by=kmapTmpArrowHit}];
+            \draw[
+              draw=\@karnaughmap@local@namecolor@,
+              \@karnaughmap@var@implicantnamearrowstyle@,
+              shorten <=\@karnaughmap@var@implicantnamegap@,
+            ] (kmapTmpLabelNode.center) -- (kmapTmpArrowHit);
+          }{%
+            \node[text=\@karnaughmap@local@namecolor@] at
+              ($($ (\@karnaughmap@func@decimaltobin@{\@karnaughmap@local@labela@}.center)!0.5!(\@karnaughmap@func@decimaltobin@{\@karnaughmap@local@labelb@}.center) $)!0.5!($ (\@karnaughmap@func@decimaltobin@{\@karnaughmap@local@labelc@}.center)!0.5!(\@karnaughmap@func@decimaltobin@{\@karnaughmap@local@labeld@}.center) $)$)
+              {{\@karnaughmap@var@implicantnamestyle@ \@karnaughmap@var@implicantname@}};
+          }}%
+        }%
       \else
         \PackageWarning{karnaugh-map}{%
           You can only draw on existing sub maps.
@@ -1324,7 +1748,7 @@
 % ^^A ##########################################################################
 % ^^A ##########################################################################
 \newcount\@karnaughmap@local@coordinate@\relax
-\DeclareDocumentCommand{\implicantcorner}{O{0}} {%
+\DeclareDocumentCommand{\implicantcorner}{D(){} O{0}} {%
   % bail if outside environment karnaugh-map
   \@karnaughmap@func@bailoutsideenvironment@{}
   %
@@ -1332,10 +1756,74 @@
   \ifnum\@karnaughmap@var@mapsizex@\@karnaughmap@var@mapsizey@=44
     % fetch new color
     \@karnaughmap@func@updatecolor@{}
+    % parse per-implicant options (e.g. name=..., namestyle=...)
+    \begingroup
+      \renewcommand{\@karnaughmap@var@implicantname@}{}%
+      \renewcommand{\@karnaughmap@var@implicantnamestyle@}{\scriptsize}%
+      \renewcommand{\@karnaughmap@var@implicantnamepos@}{center}%
+      \renewcommand{\@karnaughmap@var@implicantcolor@}{}%
+      \renewcommand{\@karnaughmap@var@implicantnamecolor@}{}%
+      \renewcommand{\@karnaughmap@var@implicantnamegap@}{1mm}%
+      \renewcommand{\@karnaughmap@var@implicantnameangle@}{90}%
+      \renewcommand{\@karnaughmap@var@implicantnamedistance@}{10mm}%
+      \renewcommand{\@karnaughmap@var@implicantnamearrowstyle@}{->}%
+      \setkeys{karnaugh-map-implicant}{#1}%
+      \newcommand{\@karnaughmap@local@implicantcolor@}{\@karnaughmap@var@color@}%
+      \IfStrEq{\@karnaughmap@var@implicantcolor@}{}{}{%
+        \renewcommand{\@karnaughmap@local@implicantcolor@}{\@karnaughmap@var@implicantcolor@}%
+      }%
     % loop through specified sub maps
-    \foreach \map in {#1} {%
+    \foreach \map in {#2} {%
       % make sure we don't try to draw on non existing sub maps
       \ifnum\map<\@karnaughmap@var@mapsizez@
+        % optional implicant name (once per submap, at submap center)
+        \IfStrEq{\@karnaughmap@var@implicantname@}{}{}{% 
+          \newcommand{\@karnaughmap@local@namecolor@}{black}%
+          \ifnum0=\@karnaughmap@var@bw@\relax
+            \renewcommand{\@karnaughmap@local@namecolor@}{\@karnaughmap@var@namecolor@}%
+          \fi
+          \IfStrEq{\@karnaughmap@var@implicantnamecolor@}{}{}{%
+            \renewcommand{\@karnaughmap@local@namecolor@}{\@karnaughmap@var@implicantnamecolor@}%
+          }%
+          \@karnaughmap@local@centerone@=\map\relax
+          \@karnaughmap@local@centertwo@=\map\relax
+          \multiply\@karnaughmap@local@centerone@ by 16\relax
+          \multiply\@karnaughmap@local@centertwo@ by 16\relax
+          \advance\@karnaughmap@local@centerone@ by 5\relax
+          \advance\@karnaughmap@local@centertwo@ by 10\relax
+          \IfStrEq{\@karnaughmap@var@implicantnamepos@}{below}{%
+            % place label under smallest minterm in this implicant (corner 0 of the submap)
+            \@karnaughmap@local@target@=\map\relax
+            \multiply\@karnaughmap@local@target@ by 16\relax
+            \node[anchor=north,text=\@karnaughmap@local@namecolor@] at ($ (\@karnaughmap@func@decimaltobin@{\@karnaughmap@local@target@}.south) + (0,-0.15) $)
+              {{\@karnaughmap@var@implicantnamestyle@ \@karnaughmap@var@implicantname@}};
+          }{\IfStrEq{\@karnaughmap@var@implicantnamepos@}{outside}{%
+            % place label outside and connect with an arrow that hits the implicant border
+            \@karnaughmap@local@target@=\map\relax
+            \multiply\@karnaughmap@local@target@ by 16\relax
+            \coordinate (kmapTmpTargetCenter) at (\@karnaughmap@func@decimaltobin@{\@karnaughmap@local@target@}.center);
+            \path[name path=kmapTmpImplicantOutline]
+              ($ (kmapTmpTargetCenter)+(-.6,.6) $) --
+              ($ (kmapTmpTargetCenter)+(.3,.6) $) --
+              ($ (kmapTmpTargetCenter)+(.3,-.3) $) --
+              ($ (kmapTmpTargetCenter)+(-.6,-.3) $) -- cycle;
+            \coordinate (kmapTmpLabelPos) at
+              ($ (kmapTmpTargetCenter)+(\@karnaughmap@var@implicantnameangle@: \@karnaughmap@var@implicantnamedistance@) $);
+            \node[text=\@karnaughmap@local@namecolor@] (kmapTmpLabelNode) at (kmapTmpLabelPos)
+              {{\@karnaughmap@var@implicantnamestyle@ \@karnaughmap@var@implicantname@}};
+            \path[name path=kmapTmpArrowLine] (kmapTmpLabelNode.center) -- (kmapTmpTargetCenter);
+            \path[name intersections={of=kmapTmpArrowLine and kmapTmpImplicantOutline, by=kmapTmpArrowHit}];
+            \draw[
+              draw=\@karnaughmap@local@namecolor@,
+              \@karnaughmap@var@implicantnamearrowstyle@,
+              shorten <=\@karnaughmap@var@implicantnamegap@,
+            ] (kmapTmpLabelNode.center) -- (kmapTmpArrowHit);
+          }{%
+            \node[text=\@karnaughmap@local@namecolor@] at
+              ($(\@karnaughmap@func@decimaltobin@{\@karnaughmap@local@centerone@}.center)!0.5!(\@karnaughmap@func@decimaltobin@{\@karnaughmap@local@centertwo@}.center)$)
+              {{\@karnaughmap@var@implicantnamestyle@ \@karnaughmap@var@implicantname@}};
+          }}%
+        }%
         % loop through the four corners
         \foreach \corner in {0,2,8,10} {%
           % calculate corner's properties {[START]
@@ -1354,7 +1842,8 @@
           \ifnum0=\@karnaughmap@var@bw@
             \fill[
               sharp corners,
-              fill=\@karnaughmap@var@color@,
+              on background layer,
+              fill=\@karnaughmap@local@implicantcolor@,
               fill opacity=0.25,
             ]
             ($(\@karnaughmap@func@decimaltobin@{\@karnaughmap@local@coordinate@}.center)+(-.6*\@karnaughmap@local@mirrorx@,.6*\@karnaughmap@local@mirrory@)$)
@@ -1368,6 +1857,7 @@
           \fi
           \draw[
             sharp corners,
+            draw=\@karnaughmap@local@implicantcolor@,
             draw opacity=1.0,
             \@karnaughmap@func@decimaltolinestyle@{\@karnaughmap@var@colorindex@},
           ]
@@ -1376,6 +1866,7 @@
           ($(\@karnaughmap@func@decimaltobin@{\@karnaughmap@local@coordinate@}.center)+(.3*\@karnaughmap@local@mirrorx@,-.3*\@karnaughmap@local@mirrory@)$) }
           --
           ($(\@karnaughmap@func@decimaltobin@{\@karnaughmap@local@coordinate@}.center)+(-.6*\@karnaughmap@local@mirrorx@,-.3*\@karnaughmap@local@mirrory@)$);
+          \@karnaughmap@func@debugcolor@{\@karnaughmap@func@decimaltobin@{\@karnaughmap@local@coordinate@}}%
         }
       \else
         \PackageWarning{karnaugh-map}{%
@@ -1384,6 +1875,7 @@
         }
       \fi
     }
+    \endgroup
   \else
     % print error if "\implicantcorner" are used on non 4x4 map
     \PackageError{karnaugh-map}{%

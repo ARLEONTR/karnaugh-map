@@ -9,3 +9,9 @@
 *.toc
 test/actual
 test/result
+*.aux
+*.log
+*.fdb_latex
+*.fdb_latexmk
+*.fls
+*.synctex.gz

@@ -17,7 +17,7 @@ mkdir actual result
 
 processTexFile() {
   printf "Processing '%s'\n" "${1}";
-  pdflatex -halt-on-error -interaction=nonstopmode -output-directory actual "${1}" > /dev/null 2>&1
+  TEXINPUTS="..//:${TEXINPUTS}" pdflatex -halt-on-error -interaction=nonstopmode -output-directory actual "${1}" > /dev/null 2>&1
   if [ "$?" == 0 ]; then
     printf "Processing of '%s' finished\n" "${1}";
   else
